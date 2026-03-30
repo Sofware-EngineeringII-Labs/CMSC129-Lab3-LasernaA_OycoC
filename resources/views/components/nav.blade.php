@@ -10,6 +10,7 @@
             <ul tabindex="-1" class="menu menu-sm dropdown-content bg-base-100 rounded-box z-1 mt-3 w-52 p-2 shadow">
                 <li><a href="/tasks">Home</a></li>
                 <li><a href="/tasks/create">New Task</a></li>
+                <li><a href="/tasks/archived">Archived</a></li>
                 @can('view-admin')
                     <li><a href="/admin">Admin</a></li>
                 @endcan
@@ -21,6 +22,7 @@
         <ul class="menu menu-horizontal px-1">
             <li><a href="/tasks">Home</a></li>
             <li><a href="/tasks/create">New Task</a></li>
+            <li><a href="/tasks/archived">Archived</a></li>
             @can('view-admin')
                 <li><a href="/admin">Admin</a></li>
             @endcan

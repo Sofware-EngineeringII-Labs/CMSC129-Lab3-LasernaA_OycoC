@@ -47,6 +47,22 @@ class TaskController extends Controller
     }
 
     /**
+     * Display archived tasks.
+     */
+    public function archived()
+    {
+        $archivedTasks = Auth::user()
+            ->tasks()
+            ->onlyTrashed()
+            ->latest('deleted_at')
+            ->get();
+
+        return view('tasks.archived', [
+            'archivedTasks' => $archivedTasks,
+        ]);
+    }
+
+    /**
      * Show the form for creating a new resource.
      */
     public function create()
@@ -164,6 +180,38 @@ class TaskController extends Controller
         $task->delete();
 
         return redirect('/tasks');
+    }
+
+    /**
+     * Restore a previously archived task.
+     */
+    public function restore(int $taskId)
+    {
+        /** @var \App\Models\User $user */
+        $task = Auth::user()
+            ->tasks()
+            ->onlyTrashed()
+            ->findOrFail($taskId);
+
+        $task->restore();
+
+        return redirect('/tasks/archived');
+    }
+
+    /**
+     * Permanently delete an archived task.
+     */
+    public function forceDelete(int $taskId)
+    {
+        /** @var \App\Models\User $user */
+        $task = Auth::user()
+            ->tasks()
+            ->onlyTrashed()
+            ->findOrFail($taskId);
+
+        $task->forceDelete();
+
+        return redirect('/tasks/archived');
     }
 
     private function nextPosition(string $status): int

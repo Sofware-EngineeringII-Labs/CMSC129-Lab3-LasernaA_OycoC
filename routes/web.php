@@ -11,8 +11,11 @@ Route::get('/', function () {
 
 Route::middleware('auth')->group(function () {
     Route::get('/tasks', [TaskController::class, 'index']);
+    Route::get('/tasks/archived', [TaskController::class, 'archived']);
     Route::get('/tasks/create', [TaskController::class, 'create']);
     Route::post('/tasks', [TaskController::class, 'store']);
+    Route::patch('/tasks/{taskId}/restore', [TaskController::class, 'restore']);
+    Route::delete('/tasks/{taskId}/force-delete', [TaskController::class, 'forceDelete']);
     Route::get('/tasks/{task}', [TaskController::class, 'show']);
     Route::get('/tasks/{task}/edit', [TaskController::class, 'edit'])->middleware('can:update,task');
     Route::patch('/tasks/{task}', [TaskController::class, 'update']);
