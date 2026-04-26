@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\SessionsController;
+use App\Http\Controllers\ChatController;
 use App\Http\Controllers\TaskController;
 use Illuminate\Support\Facades\Route;
 
@@ -10,6 +11,13 @@ Route::get('/', function () {
 });
 
 Route::middleware('auth')->group(function () {
+    Route::prefix('/chat')->controller(ChatController::class)->group(function () {
+        Route::get('/conversations', 'listConversations');
+        Route::post('/conversations', 'createConversation');
+        Route::get('/conversations/{conversationId}', 'showConversation');
+        Route::post('/messages', 'storeMessage');
+    });
+
     Route::get('/tasks', [TaskController::class, 'index']);
     Route::get('/tasks/archived', [TaskController::class, 'archived']);
     Route::get('/tasks/create', [TaskController::class, 'create']);
