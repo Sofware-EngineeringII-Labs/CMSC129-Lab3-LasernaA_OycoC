@@ -28,3 +28,11 @@
     background-color: #1f2937;
     color: #f3f4f6;
 }
+
+#chat-error {
+    line-height: 1.4;
+}
+
+#send-message-btn.loading {
+    pointer-events: none;
+}

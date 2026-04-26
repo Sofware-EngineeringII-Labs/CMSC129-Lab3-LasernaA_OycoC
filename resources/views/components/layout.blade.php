@@ -19,5 +19,9 @@
     <main class="{{ $mainClass }}">
         {{ $slot }}
     </main>
+
+    @auth
+        <x-chat-widget />
+    @endauth
 </body>
 </html>
