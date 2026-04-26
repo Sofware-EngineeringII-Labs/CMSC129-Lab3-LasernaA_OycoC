@@ -35,6 +35,58 @@ status, priority, due date range
 10. Soft delete archive flow:
 archive, restore, permanent delete
 
+## AI Chatbot (Minimum Requirement)
+This project now includes an inquiry-only AI chatbot integrated into authenticated pages.
+
+Current scope for this phase:
+1. Inquiry-only assistant for task questions (no CRUD actions yet)
+2. Conversation persistence in the database
+3. Context-aware follow-up support using previous assistant results
+4. Global chat widget visible on authenticated pages
+
+### AI Provider and Model
+1. Provider: Google Gemini API
+2. Model: `gemini-2.5-flash-lite`
+
+### Environment Variables (AI)
+Add these to your local `.env`:
+
+```env
+GEMINI_API_KEY=your_real_api_key_here
+GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+```
+
+Important:
+1. Do not commit real API keys
+2. Keep keys server-side only
+3. Frontend must call backend routes only
+
+### Setup Steps for Chatbot (Minimum Phase)
+1. Generate Gemini API key from Google AI Studio
+2. Add the key to local `.env`
+3. Run migrations for chat tables:
+
+```bash
+php artisan migrate
+```
+
+4. Start app:
+
+```bash
+composer run dev
+```
+
+### Example Inquiry Prompts
+1. `Show my tasks`
+2. `What tasks are due today?`
+3. `Show high priority tasks`
+4. `How many completed tasks do I have?`
+5. `What is my oldest pending task?`
+
+### Current Limitation (Expected in Minimum Phase)
+CRUD commands are intentionally blocked in this phase. If a user asks to create, update, or delete, the chatbot responds that it is in inquiry-only mode.
+
 ## Installation and Setup Instructions
 1. Clone the repository.
 2. Go into the project directory.
