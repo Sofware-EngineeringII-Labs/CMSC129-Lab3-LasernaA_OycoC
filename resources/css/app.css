@@ -9,3 +9,22 @@
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
 }
+
+#messages .message {
+    max-width: 85%;
+    border-radius: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+}
+
+#messages .message.user {
+    margin-left: auto;
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+#messages .message.assistant {
+    margin-right: auto;
+    background-color: #1f2937;
+    color: #f3f4f6;
+}
