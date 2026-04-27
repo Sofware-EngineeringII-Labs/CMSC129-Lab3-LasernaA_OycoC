@@ -3,11 +3,18 @@
 </button>
 
 <section id="chat-popup" class="hidden fixed bottom-24 right-6 z-40 w-[22rem] max-w-[calc(100vw-2rem)] rounded-xl border border-base-300 bg-base-100 shadow-2xl">
-    <div class="flex items-center justify-between border-b border-base-300 px-4 py-3">
-        <h3 class="text-sm font-semibold">Task Assistant</h3>
-        <div class="flex items-center gap-2">
-            <button id="new-chat-btn" type="button" class="btn btn-xs btn-outline">New Chat</button>
-            <button id="chat-close-btn" type="button" class="btn btn-xs btn-ghost">Close</button>
+    <div class="border-b border-base-300 px-4 py-2">
+        <div class="flex items-center justify-between">
+            <h3 class="text-sm font-semibold">Task Assistant</h3>
+            <div class="flex items-center gap-2">
+                <button id="new-chat-btn" type="button" class="btn btn-xs btn-outline">New Chat</button>
+                <button id="chat-close-btn" type="button" class="btn btn-xs btn-ghost">Close</button>
+            </div>
+        </div>
+
+        <div class="mt-2 flex gap-1" role="tablist" aria-label="Chat mode">
+            <button id="chat-mode-inquiry" class="btn btn-ghost btn-xs tab-active">Inquiry</button>
+            <button id="chat-mode-crud" class="btn btn-ghost btn-xs">CRUD</button>
         </div>
     </div>
 

@@ -16,6 +16,7 @@ class InquiryChatService
     public function __construct(
         private readonly AIService $aiService,
         private readonly PromptService $promptService,
+        private readonly CrudChatService $crudService,
     ) {
     }
 
@@ -30,13 +31,14 @@ class InquiryChatService
         $previousContext = $this->getPreviousAssistantContext($conversation);
         $intentSource = 'rules';
 
+        // If previous assistant message requested a confirmation/pending action,
+        // let the CRUD handler manage follow-up replies (e.g., 'yes' to confirm deletes).
+        if (isset($previousContext['pending_action'])) {
+            return $this->crudService->respond($user, $conversation, $message);
+        }
+
         if ($this->looksLikeCrudCommand($normalized)) {
-            return [
-                'content' => "I am currently in inquiry-only mode. I can answer questions about your tasks, but I cannot create, update, or delete tasks yet.",
-                'metadata' => [
-                    'intent' => 'blocked_action',
-                ],
-            ];
+            return $this->crudService->respond($user, $conversation, $message);
         }
 
         $analysis = $this->handleSpecificInquiries($user, $normalized, $previousContext);
@@ -60,7 +62,7 @@ class InquiryChatService
         }
 
         return [
-            'content' => "I am not fully sure what you mean yet. Try one of these:\n- Show my tasks\n- What tasks are due today?\n- Show high-priority tasks\n- How many completed tasks do I have?\n- What is my oldest pending task?",
+            'content' => "I am not fully sure what you mean yet. Try one of these:\n- Show my tasks\n- What tasks are due today?\n- What tasks are due tomorrow?\n- Show tasks due this week\n- Show overdue tasks\n- Show high-priority tasks\n- How many completed tasks do I have?\n- What is my oldest pending task?",
             'metadata' => [
                 'intent' => 'unclear',
                 'intent_source' => 'none',
@@ -94,6 +96,18 @@ class InquiryChatService
             return $this->handleSpecificInquiries($user, 'what tasks are due today', $previousContext);
         }
 
+        if ($intent === 'due_tomorrow') {
+            return $this->handleSpecificInquiries($user, 'what tasks are due tomorrow', $previousContext);
+        }
+
+        if ($intent === 'due_this_week') {
+            return $this->handleSpecificInquiries($user, 'what tasks are due this week', $previousContext);
+        }
+
+        if ($intent === 'overdue_tasks') {
+            return $this->handleSpecificInquiries($user, 'show overdue tasks', $previousContext);
+        }
+
         if ($intent === 'completed_count') {
             return $this->handleSpecificInquiries($user, 'how many completed tasks do i have', $previousContext);
         }
@@ -122,6 +136,10 @@ class InquiryChatService
             return $this->handleSpecificInquiries($user, mb_strtolower(trim($base)), $previousContext);
         }
 
+        if ($intent === 'unclear' && $classification['rewrite'] !== '') {
+            return $this->handleSpecificInquiries($user, mb_strtolower(trim($classification['rewrite'])), $previousContext);
+        }
+
         return null;
     }
 
@@ -141,6 +159,47 @@ class InquiryChatService
                 ->get();
 
             return $this->buildTaskListReply('due_today', 'Tasks due today', $tasks);
+        }
+
+        if ($this->isDueTomorrowIntent($normalized)) {
+            $tasks = $user->tasks()
+                ->whereDate('due_date', now()->addDay()->toDateString())
+                ->orderBy('status')
+                ->orderBy('priority')
+                ->orderBy('created_at')
+                ->limit(self::MAX_LIST_RESULTS)
+                ->get();
+
+            return $this->buildTaskListReply('due_tomorrow', 'Tasks due tomorrow', $tasks);
+        }
+
+        if ($this->isDueThisWeekIntent($normalized)) {
+            $start = now()->startOfDay();
+            $end = now()->endOfWeek()->endOfDay();
+
+            $tasks = $user->tasks()
+                ->whereBetween('due_date', [$start->toDateString(), $end->toDateString()])
+                ->orderBy('due_date')
+                ->orderBy('priority')
+                ->orderBy('created_at')
+                ->limit(self::MAX_LIST_RESULTS)
+                ->get();
+
+            return $this->buildTaskListReply('due_this_week', 'Tasks due this week', $tasks);
+        }
+
+        if ($this->isOverdueIntent($normalized)) {
+            $tasks = $user->tasks()
+                ->whereNotNull('due_date')
+                ->whereDate('due_date', '<', now()->toDateString())
+                ->where('status', '!=', 'done')
+                ->orderBy('due_date')
+                ->orderBy('priority')
+                ->orderBy('created_at')
+                ->limit(self::MAX_LIST_RESULTS)
+                ->get();
+
+            return $this->buildTaskListReply('overdue_tasks', 'Overdue tasks', $tasks);
         }
 
         if ($this->isCompletedCountIntent($normalized)) {
@@ -284,6 +343,38 @@ class InquiryChatService
             'today tasks',
             'for today',
         ]) || (str_contains($normalized, 'today') && str_contains($normalized, 'due'));
+    }
+
+    private function isDueTomorrowIntent(string $normalized): bool
+    {
+        return $this->containsAny($normalized, [
+            'due tomorrow',
+            'tomorrow due',
+            'tasks tomorrow',
+            'tomorrow tasks',
+            'for tomorrow',
+        ]) || (str_contains($normalized, 'tomorrow') && str_contains($normalized, 'due'));
+    }
+
+    private function isDueThisWeekIntent(string $normalized): bool
+    {
+        return $this->containsAny($normalized, [
+            'due this week',
+            'this week due',
+            'tasks this week',
+            'this week tasks',
+            'for this week',
+        ]) || (str_contains($normalized, 'this week') && str_contains($normalized, 'due'));
+    }
+
+    private function isOverdueIntent(string $normalized): bool
+    {
+        return $this->containsAny($normalized, [
+            'overdue',
+            'past due',
+            'missed deadline',
+            'late tasks',
+        ]);
     }
 
     private function isCompletedCountIntent(string $normalized): bool
@@ -504,7 +595,17 @@ class InquiryChatService
             ? mb_strtolower(trim($decoded['intent']))
             : '';
 
-        $allowedIntents = ['list_tasks', 'due_today', 'completed_count', 'oldest_pending', 'status_count', 'unclear'];
+        $allowedIntents = [
+            'list_tasks',
+            'due_today',
+            'due_tomorrow',
+            'due_this_week',
+            'overdue_tasks',
+            'completed_count',
+            'oldest_pending',
+            'status_count',
+            'unclear',
+        ];
 
         if (!in_array($intent, $allowedIntents, true)) {
             return null;

@@ -24,6 +24,7 @@ class ChatMessageRequest extends FormRequest
         return [
             'conversation_id' => ['required', 'integer', 'exists:chat_conversations,id'],
             'content' => ['required', 'string', 'min:1', 'max:4000'],
+            'mode' => ['nullable', 'string', 'in:inquiry,crud'],
         ];
     }
 }

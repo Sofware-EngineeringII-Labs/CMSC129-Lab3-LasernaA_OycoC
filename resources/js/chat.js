@@ -9,6 +9,7 @@ const chatError = document.getElementById('chat-error');
 
 let activeConversationId = null;
 let isSending = false;
+let selectedMode = 'inquiry';
 
 async function apiRequest(method, url, data = null) {
     const response = await window.axios({
@@ -63,6 +64,35 @@ function setChatOpen(isOpen) {
     }
 }
 
+function setMode(mode) {
+    selectedMode = mode === 'crud' ? 'crud' : 'inquiry';
+
+    const inquiryBtn = document.getElementById('chat-mode-inquiry');
+    const crudBtn = document.getElementById('chat-mode-crud');
+
+    if (inquiryBtn && crudBtn) {
+        inquiryBtn.classList.toggle('tab-active', selectedMode === 'inquiry');
+        crudBtn.classList.toggle('tab-active', selectedMode === 'crud');
+    }
+
+    if (messageInput) {
+        messageInput.placeholder = selectedMode === 'crud' ? 'Create, update, or delete tasks...' : 'Ask about your tasks...';
+        messageInput.focus();
+    }
+}
+
+function formatAssistantContent(content) {
+    let formatted = String(content ?? '').replace(/\r\n/g, '\n').trim();
+
+    // Convert compressed bullet responses like "Task list: - item - item" to multiline.
+    if (!formatted.includes('\n') && formatted.includes(' - ')) {
+        formatted = formatted.replace(/:\s*-\s+/g, ':\n- ');
+        formatted = formatted.replace(/\s-\s(?=#\d+)/g, '\n- ');
+    }
+
+    return formatted;
+}
+
 function appendMessage(role, content) {
     if (!messagesContainer) {
         return;
@@ -70,7 +100,7 @@ function appendMessage(role, content) {
 
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
-    messageDiv.textContent = content;
+    messageDiv.textContent = role === 'assistant' ? formatAssistantContent(content) : content;
 
     messagesContainer.appendChild(messageDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -166,12 +196,31 @@ async function sendMessage() {
         const payload = await apiRequest('post', '/chat/messages', {
             conversation_id: conversationId,
             content: message,
+            mode: selectedMode,
         });
 
         const assistantMessage = payload?.data?.assistant_message?.content;
+        const assistantMeta = payload?.data?.assistant_message?.metadata ?? {};
 
         if (assistantMessage) {
             appendMessage('assistant', assistantMessage);
+
+            // If assistant metadata indicates a task change, emit an event and show a small system notice.
+            if (assistantMeta && typeof assistantMeta === 'object') {
+                const intent = assistantMeta.intent ?? null;
+                const taskId = assistantMeta.task_id ?? assistantMeta.taskId ?? null;
+
+                if (intent === 'create' || intent === 'update' || intent === 'delete') {
+                    const detail = { intent, taskId };
+                    // Dispatch a DOM event so other parts of the app can react.
+                    window.dispatchEvent(new CustomEvent('task:changed', { detail }));
+
+                    // Show a lightweight system message in the chat for immediate feedback.
+                    const verb = intent === 'create' ? 'Created' : intent === 'update' ? 'Updated' : 'Deleted';
+                    const idText = taskId ? ` #${taskId}` : '';
+                    appendMessage('system', `${verb} task${idText}.`);
+                }
+            }
         } else {
             appendMessage('assistant', 'I was unable to generate a response. Please try again.');
         }
@@ -211,6 +260,16 @@ function initializeChat() {
     newChatButton?.addEventListener('click', () => {
         void startNewChat();
     });
+
+    // Mode tab buttons
+    const inquiryBtn = document.getElementById('chat-mode-inquiry');
+    const crudBtn = document.getElementById('chat-mode-crud');
+
+    inquiryBtn?.addEventListener('click', () => setMode('inquiry'));
+    crudBtn?.addEventListener('click', () => setMode('crud'));
+
+    // initialize mode UI
+    setMode(selectedMode);
 
     messageInput.addEventListener('keypress', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {

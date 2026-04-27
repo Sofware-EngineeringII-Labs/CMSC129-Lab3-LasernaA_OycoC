@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ChatMessageRequest;
 use App\Models\ChatConversation;
 use App\Services\Chat\InquiryChatService;
+use App\Services\Chat\CrudChatService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -59,7 +60,7 @@ class ChatController extends Controller
         ]);
     }
 
-    public function storeMessage(ChatMessageRequest $request, InquiryChatService $inquiryChatService): JsonResponse
+    public function storeMessage(ChatMessageRequest $request, InquiryChatService $inquiryChatService, CrudChatService $crudChatService): JsonResponse
     {
         $validated = $request->validated();
 
@@ -71,7 +72,13 @@ class ChatController extends Controller
             'metadata' => null,
         ]);
 
-        $assistantReply = $inquiryChatService->respond($request->user(), $conversation, $validated['content']);
+        $mode = $validated['mode'] ?? null;
+
+        if ($mode === 'crud') {
+            $assistantReply = $crudChatService->respond($request->user(), $conversation, $validated['content']);
+        } else {
+            $assistantReply = $inquiryChatService->respond($request->user(), $conversation, $validated['content']);
+        }
 
         $assistantMessage = $conversation->messages()->create([
             'role' => 'assistant',

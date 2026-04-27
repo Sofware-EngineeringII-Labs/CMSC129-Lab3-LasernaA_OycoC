@@ -27,6 +27,24 @@
     margin-right: auto;
     background-color: #1f2937;
     color: #f3f4f6;
+    white-space: pre-wrap;
+    line-height: 1.5;
+}
+
+/* Active tab styling for chat mode */
+.tab-active {
+    background-color: #0ea5a4 !important;
+    color: #ffffff !important;
+    border-color: transparent !important;
+}
+
+/* System messages inserted by the UI (e.g., task created/updated notifications) */
+#messages .message.system {
+    margin-right: auto;
+    background-color: #065f46;
+    color: #d1fae5;
+    font-size: 0.8rem;
+    opacity: 0.95;
 }
 
 #chat-error {

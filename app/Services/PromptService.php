@@ -18,6 +18,9 @@ class PromptService
             'Use only the supplied task data and metadata.',
             'If data is insufficient, say so and ask a clarifying question.',
             'Keep answers concise, accurate, and user-friendly.',
+            'When listing tasks, always use one item per line with this format: - #<id> <title> (<status>, <priority>, due <date>).',
+            'Never flatten a list into one line.',
+            'Use plain text only. Do not output markdown tables or JSON.',
         ]);
 
         $analysisJson = json_encode($analysis, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
@@ -48,11 +51,12 @@ class PromptService
         $systemPrompt = implode("\n", [
             'You classify user inquiries for a task manager chatbot.',
             'Output only valid JSON.',
-            'Allowed intents: list_tasks, due_today, completed_count, oldest_pending, status_count, unclear.',
+            'Allowed intents: list_tasks, due_today, due_tomorrow, due_this_week, overdue_tasks, completed_count, oldest_pending, status_count, unclear.',
             'Allowed status values: backlog, todo, in_progress, done, null.',
             'Allowed priority values: low, medium, high, null.',
             'When intent is list_tasks, provide optional status and priority filters.',
             'When intent is status_count, status is required.',
+            'When unclear but likely mappable, provide a short rewrite to one supported intent phrase.',
             'Never output CRUD actions.',
             'JSON shape: {"intent":"...","status":null|"...","priority":null|"...","rewrite":"..."}',
         ]);
