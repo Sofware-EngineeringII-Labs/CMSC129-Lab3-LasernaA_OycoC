@@ -5,11 +5,19 @@ namespace App\Services\Chat;
 use App\Models\ChatConversation;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\AIService;
+use App\Services\PromptService;
 use Illuminate\Support\Collection;
 
 class InquiryChatService
 {
     private const MAX_LIST_RESULTS = 10;
+
+    public function __construct(
+        private readonly AIService $aiService,
+        private readonly PromptService $promptService,
+    ) {
+    }
 
     /**
      * Generate an inquiry-only assistant response for a user's message.
@@ -30,10 +38,18 @@ class InquiryChatService
             ];
         }
 
-        $reply = $this->handleSpecificInquiries($user, $normalized, $previousContext);
+        $analysis = $this->handleSpecificInquiries($user, $normalized, $previousContext);
 
-        if ($reply !== null) {
-            return $reply;
+        if ($analysis !== null) {
+            $prompts = $this->promptService->buildInquiryPrompts($message, $analysis, $previousContext);
+            $generatedContent = $this->aiService->generateText($prompts['system'], $prompts['user']);
+
+            return [
+                'content' => $generatedContent !== '' ? $generatedContent : $analysis['fallback_content'],
+                'metadata' => array_merge($analysis['metadata'], [
+                    'response_source' => $generatedContent !== '' ? 'gemini' : 'fallback',
+                ]),
+            ];
         }
 
         return [
@@ -66,7 +82,10 @@ class InquiryChatService
             $count = $user->tasks()->where('status', 'done')->count();
 
             return [
-                'content' => "You currently have {$count} completed task(s).",
+                'fallback_content' => "You currently have {$count} completed task(s).",
+                'analysis' => [
+                    'count' => $count,
+                ],
                 'metadata' => [
                     'intent' => 'completed_count',
                     'count' => $count,
@@ -82,7 +101,10 @@ class InquiryChatService
 
             if ($task === null) {
                 return [
-                    'content' => 'You do not have any pending tasks right now.',
+                    'fallback_content' => 'You do not have any pending tasks right now.',
+                    'analysis' => [
+                        'count' => 0,
+                    ],
                     'metadata' => [
                         'intent' => 'oldest_pending',
                         'count' => 0,
@@ -94,7 +116,16 @@ class InquiryChatService
             $content = "Your oldest pending task is #{$task->id} \"{$task->title}\" ({$task->status}, {$task->priority}, due {$dueDate}).";
 
             return [
-                'content' => $content,
+                'fallback_content' => $content,
+                'analysis' => [
+                    'task' => [
+                        'id' => $task->id,
+                        'title' => $task->title,
+                        'status' => $task->status,
+                        'priority' => $task->priority,
+                        'due_date' => $dueDate,
+                    ],
+                ],
                 'metadata' => [
                     'intent' => 'oldest_pending',
                     'task_id' => $task->id,
@@ -108,7 +139,11 @@ class InquiryChatService
             $label = str_replace('_', ' ', $status);
 
             return [
-                'content' => "You currently have {$count} task(s) with status {$label}.",
+                'fallback_content' => "You currently have {$count} task(s) with status {$label}.",
+                'analysis' => [
+                    'status' => $status,
+                    'count' => $count,
+                ],
                 'metadata' => [
                     'intent' => 'status_count',
                     'status' => $status,
@@ -177,20 +212,25 @@ class InquiryChatService
 
     private function isDueTodayIntent(string $normalized): bool
     {
-        return str_contains($normalized, 'due today')
-            || str_contains($normalized, 'today') && str_contains($normalized, 'due');
+        return $this->containsAny($normalized, [
+            'due today',
+            'today due',
+            'tasks today',
+            'today tasks',
+            'for today',
+        ]) || (str_contains($normalized, 'today') && str_contains($normalized, 'due'));
     }
 
     private function isCompletedCountIntent(string $normalized): bool
     {
-        return (str_contains($normalized, 'how many') || str_contains($normalized, 'count'))
-            && (str_contains($normalized, 'completed') || str_contains($normalized, 'done'));
+        return $this->containsAny($normalized, ['how many', 'count', 'number of'])
+            && $this->containsAny($normalized, ['completed', 'done', 'finished']);
     }
 
     private function isOldestPendingIntent(string $normalized): bool
     {
-        return str_contains($normalized, 'oldest')
-            && (str_contains($normalized, 'pending') || str_contains($normalized, 'task'));
+        return $this->containsAny($normalized, ['oldest', 'earliest'])
+            && $this->containsAny($normalized, ['pending', 'task', 'open']);
     }
 
     private function isStatusCountIntent(string $normalized, ?string &$status): bool
@@ -201,24 +241,40 @@ class InquiryChatService
             return false;
         }
 
-        return str_contains($normalized, 'how many') || str_contains($normalized, 'count');
+        return $this->containsAny($normalized, ['how many', 'count', 'number of']);
     }
 
     private function isListIntent(string $normalized): bool
     {
-        return str_contains($normalized, 'show')
-            || str_contains($normalized, 'list')
-            || str_contains($normalized, 'what tasks')
-            || str_contains($normalized, 'what do i have')
-            || $this->isFollowUpReference($normalized);
+        return $this->containsAny($normalized, [
+            'show',
+            'list',
+            'what tasks',
+            'what are my tasks',
+            'what are the tasks',
+            'what do i have',
+            'what tasks do i have',
+            'can you show my tasks',
+            'can you list my tasks',
+            'my tasks',
+            'tasks i have',
+            'do i have tasks',
+            'which tasks',
+            'give me my tasks',
+        ]) || $this->isFollowUpReference($normalized);
     }
 
     private function isFollowUpReference(string $normalized): bool
     {
-        return str_contains($normalized, 'those')
-            || str_contains($normalized, 'them')
-            || str_contains($normalized, 'that list')
-            || str_starts_with($normalized, 'what about');
+        return $this->containsAny($normalized, [
+            'those',
+            'them',
+            'that list',
+            'these',
+            'ones',
+            'from that',
+            'from those',
+        ]) || str_starts_with($normalized, 'what about');
     }
 
     private function extractStatus(string $normalized): ?string
@@ -272,7 +328,12 @@ class InquiryChatService
     {
         if ($tasks->isEmpty()) {
             return [
-                'content' => "{$title}: no matching tasks found.",
+                'fallback_content' => "{$title}: no matching tasks found.",
+                'analysis' => [
+                    'title' => $title,
+                    'tasks' => [],
+                    'filters' => $appliedFilters,
+                ],
                 'metadata' => [
                     'intent' => $intent,
                     'count' => 0,
@@ -289,9 +350,23 @@ class InquiryChatService
         });
 
         $content = $title . ":\n" . $lines->implode("\n");
+        $taskData = $tasks->map(function (Task $task): array {
+            return [
+                'id' => $task->id,
+                'title' => $task->title,
+                'status' => $task->status,
+                'priority' => $task->priority,
+                'due_date' => $this->formatDueDate($task->due_date),
+            ];
+        })->values()->all();
 
         return [
-            'content' => $content,
+            'fallback_content' => $content,
+            'analysis' => [
+                'title' => $title,
+                'tasks' => $taskData,
+                'filters' => $appliedFilters,
+            ],
             'metadata' => [
                 'intent' => $intent,
                 'count' => $tasks->count(),
@@ -325,5 +400,19 @@ class InquiryChatService
         }
 
         return 'no due date';
+    }
+
+    /**
+     * @param list<string> $needles
+     */
+    private function containsAny(string $haystack, array $needles): bool
+    {
+        foreach ($needles as $needle) {
+            if ($needle !== '' && str_contains($haystack, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
