@@ -38,4 +38,38 @@ class PromptService
             'user' => $userPrompt,
         ];
     }
+
+    /**
+     * @param array<string,mixed> $previousContext
+     * @return array{system:string,user:string}
+     */
+    public function buildInquiryFallbackClassificationPrompts(string $originalMessage, array $previousContext): array
+    {
+        $systemPrompt = implode("\n", [
+            'You classify user inquiries for a task manager chatbot.',
+            'Output only valid JSON.',
+            'Allowed intents: list_tasks, due_today, completed_count, oldest_pending, status_count, unclear.',
+            'Allowed status values: backlog, todo, in_progress, done, null.',
+            'Allowed priority values: low, medium, high, null.',
+            'When intent is list_tasks, provide optional status and priority filters.',
+            'When intent is status_count, status is required.',
+            'Never output CRUD actions.',
+            'JSON shape: {"intent":"...","status":null|"...","priority":null|"...","rewrite":"..."}',
+        ]);
+
+        $contextJson = json_encode($previousContext, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        $userPrompt = implode("\n\n", [
+            'Classify this user message:',
+            $originalMessage,
+            'Previous assistant context metadata (optional):',
+            $contextJson ?: '{}',
+            'Return JSON only. No markdown code fences.',
+        ]);
+
+        return [
+            'system' => $systemPrompt,
+            'user' => $userPrompt,
+        ];
+    }
 }

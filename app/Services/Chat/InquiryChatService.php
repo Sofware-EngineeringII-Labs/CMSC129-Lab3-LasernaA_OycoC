@@ -28,6 +28,7 @@ class InquiryChatService
     {
         $normalized = mb_strtolower(trim($message));
         $previousContext = $this->getPreviousAssistantContext($conversation);
+        $intentSource = 'rules';
 
         if ($this->looksLikeCrudCommand($normalized)) {
             return [
@@ -40,6 +41,11 @@ class InquiryChatService
 
         $analysis = $this->handleSpecificInquiries($user, $normalized, $previousContext);
 
+        if ($analysis === null) {
+            $analysis = $this->resolveInquiryViaAiFallback($user, $message, $previousContext);
+            $intentSource = $analysis !== null ? 'ai_fallback' : 'none';
+        }
+
         if ($analysis !== null) {
             $prompts = $this->promptService->buildInquiryPrompts($message, $analysis, $previousContext);
             $generatedContent = $this->aiService->generateText($prompts['system'], $prompts['user']);
@@ -48,6 +54,7 @@ class InquiryChatService
                 'content' => $generatedContent !== '' ? $generatedContent : $analysis['fallback_content'],
                 'metadata' => array_merge($analysis['metadata'], [
                     'response_source' => $generatedContent !== '' ? 'gemini' : 'fallback',
+                    'intent_source' => $intentSource,
                 ]),
             ];
         }
@@ -56,8 +63,66 @@ class InquiryChatService
             'content' => "I am not fully sure what you mean yet. Try one of these:\n- Show my tasks\n- What tasks are due today?\n- Show high-priority tasks\n- How many completed tasks do I have?\n- What is my oldest pending task?",
             'metadata' => [
                 'intent' => 'unclear',
+                'intent_source' => 'none',
             ],
         ];
+    }
+
+    /**
+     * @param array<string,mixed> $previousContext
+     */
+    private function resolveInquiryViaAiFallback(User $user, string $originalMessage, array $previousContext): ?array
+    {
+        $prompts = $this->promptService->buildInquiryFallbackClassificationPrompts($originalMessage, $previousContext);
+        $rawClassification = $this->aiService->generateText($prompts['system'], $prompts['user']);
+
+        if ($rawClassification === '') {
+            return null;
+        }
+
+        $classification = $this->extractClassificationPayload($rawClassification);
+
+        if ($classification === null) {
+            return null;
+        }
+
+        $intent = $classification['intent'];
+        $status = $classification['status'];
+        $priority = $classification['priority'];
+
+        if ($intent === 'due_today') {
+            return $this->handleSpecificInquiries($user, 'what tasks are due today', $previousContext);
+        }
+
+        if ($intent === 'completed_count') {
+            return $this->handleSpecificInquiries($user, 'how many completed tasks do i have', $previousContext);
+        }
+
+        if ($intent === 'oldest_pending') {
+            return $this->handleSpecificInquiries($user, 'what is my oldest pending task', $previousContext);
+        }
+
+        if ($intent === 'status_count' && $status !== null) {
+            $statusPhrase = $status === 'in_progress' ? 'in progress' : $status;
+
+            return $this->handleSpecificInquiries($user, "how many {$statusPhrase} tasks", $previousContext);
+        }
+
+        if ($intent === 'list_tasks') {
+            $base = 'show my tasks';
+
+            if ($status !== null) {
+                $base .= ' ' . ($status === 'in_progress' ? 'in progress' : $status);
+            }
+
+            if ($priority !== null) {
+                $base .= " {$priority} priority";
+            }
+
+            return $this->handleSpecificInquiries($user, mb_strtolower(trim($base)), $previousContext);
+        }
+
+        return null;
     }
 
     /**
@@ -414,5 +479,57 @@ class InquiryChatService
         }
 
         return false;
+    }
+
+    /**
+     * @return array{intent:string,status:?string,priority:?string,rewrite:string}|null
+     */
+    private function extractClassificationPayload(string $rawClassification): ?array
+    {
+        $decoded = json_decode($rawClassification, true);
+
+        if (!is_array($decoded)) {
+            if (preg_match('/\{.*\}/s', $rawClassification, $matches) !== 1) {
+                return null;
+            }
+
+            $decoded = json_decode($matches[0], true);
+
+            if (!is_array($decoded)) {
+                return null;
+            }
+        }
+
+        $intent = isset($decoded['intent']) && is_string($decoded['intent'])
+            ? mb_strtolower(trim($decoded['intent']))
+            : '';
+
+        $allowedIntents = ['list_tasks', 'due_today', 'completed_count', 'oldest_pending', 'status_count', 'unclear'];
+
+        if (!in_array($intent, $allowedIntents, true)) {
+            return null;
+        }
+
+        $status = isset($decoded['status']) && is_string($decoded['status'])
+            ? mb_strtolower(trim($decoded['status']))
+            : null;
+
+        $priority = isset($decoded['priority']) && is_string($decoded['priority'])
+            ? mb_strtolower(trim($decoded['priority']))
+            : null;
+
+        $rewrite = isset($decoded['rewrite']) && is_string($decoded['rewrite'])
+            ? trim($decoded['rewrite'])
+            : '';
+
+        $status = in_array($status, ['backlog', 'todo', 'in_progress', 'done'], true) ? $status : null;
+        $priority = in_array($priority, ['low', 'medium', 'high'], true) ? $priority : null;
+
+        return [
+            'intent' => $intent,
+            'status' => $status,
+            'priority' => $priority,
+            'rewrite' => $rewrite,
+        ];
     }
 }
