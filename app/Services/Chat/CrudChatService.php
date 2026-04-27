@@ -272,6 +272,27 @@ class CrudChatService
             return null;
         }
 
+        // If the user appended the word "status" (common: "... status to in progress"),
+        // try a fallback that strips a trailing 'status' only if that produces matches.
+        $candidateWithoutStatus = preg_replace('/\bstatus\b$/i', '', $candidate);
+        if ($candidateWithoutStatus !== $candidate && trim($candidateWithoutStatus) !== '') {
+            $testMatches = $user->tasks()
+                ->whereRaw('LOWER(title) LIKE ?', ['%' . mb_strtolower(trim($candidateWithoutStatus)) . '%'])
+                ->orderByDesc('updated_at')
+                ->orderByDesc('id')
+                ->get();
+
+            if ($testMatches->isNotEmpty()) {
+                // Prefer exact match among these if present, otherwise the most recently updated.
+                $exact = $testMatches->where(fn(Task $t) => mb_strtolower(trim($t->title)) === mb_strtolower(trim($candidateWithoutStatus)));
+                if ($exact->isNotEmpty()) {
+                    return $exact->first();
+                }
+
+                return $testMatches->first();
+            }
+        }
+
         $exactMatches = $user->tasks()
             ->whereRaw('LOWER(title) = ?', [mb_strtolower($candidate)])
             ->orderByDesc('updated_at')
