@@ -149,19 +149,59 @@ So the flow is:
 
 ## 10. End-to-End Request Flow
 
-1. User sends chat from widget (`resources/js/chat.js`).
-2. Request hits authenticated route in `routes/web.php`.
-3. `ChatController@storeMessage` validates and stores user message.
-4. `InquiryChatService::respond` runs:
-   1. block CRUD-like commands in inquiry phase,
-   2. rule-first intent handling,
-   3. AI fallback classification if unmatched,
-   4. backend user-scoped data retrieval,
-   5. prompt build + Gemini generation,
-   6. fallback content if Gemini fails.
-5. Controller stores assistant message (content + metadata).
-6. JSON response returns user+assistant message.
-7. Frontend appends response and updates chat history display.
+1. UI capture and submit
+   1. User types a message in the widget UI.
+   2. Frontend code sends a POST request to `/chat/messages` with:
+      1. `conversation_id`
+      2. `content`
+   3. Request is sent with authenticated session cookies (same web app session).
+
+2. Route and controller entry
+   1. Request enters authenticated chat route in `routes/web.php`.
+   2. `ChatController@storeMessage` receives the request.
+   3. `ChatMessageRequest` validates payload shape and limits.
+
+3. Conversation ownership and persistence
+   1. Controller resolves conversation through user-scoped lookup.
+   2. If conversation does not belong to current user, request fails safely.
+   3. Valid user message is saved in `chat_messages` as role `user`.
+
+4. Inquiry orchestration in backend service
+   1. Controller calls `InquiryChatService::respond`.
+   2. Service first enforces inquiry-only safety:
+      1. CRUD-style requests are blocked in this phase.
+   3. Service tries rule-first intent detection (low-cost path).
+   4. If no rule matches, service triggers AI fallback classification:
+      1. Gemini classifies to safe inquiry schema.
+      2. Backend validates/normalizes the classification.
+      3. Backend maps classification to canonical internal inquiry path.
+   5. Backend performs user-scoped Eloquent reads (never direct AI-to-DB).
+   6. Service builds structured analysis payload from query results.
+
+5. Prompt build and Gemini response generation
+   1. `PromptService` builds system + user prompts using:
+      1. original user message,
+      2. structured analysis,
+      3. previous assistant context metadata.
+   2. `AIService` sends request to Gemini with server-side API key.
+   3. If Gemini returns valid content, that becomes assistant response.
+   4. If Gemini fails/returns empty, deterministic fallback text is used.
+
+6. Assistant persistence and response to UI
+   1. Controller stores assistant message in `chat_messages` as role `assistant`.
+   2. Assistant metadata stores intent, filters, context IDs, and source flags.
+   3. Controller updates conversation `last_message_at`.
+   4. JSON response returns both user and assistant messages.
+
+7. Frontend render and state update
+   1. Frontend appends assistant response to chat window.
+   2. Loading state is removed.
+   3. Any server-side error is shown as a user-friendly UI message.
+
+8. Context continuity for next turns
+   1. On the next message, service reads latest assistant metadata.
+   2. Follow-up phrases can reference prior result sets.
+   3. This enables context-aware inquiry flow without exposing raw DB access to AI.
 
 ---
 
